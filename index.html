@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Приложение с динамической загрузкой контента</title>
+    <style>
+        /* Общие стили */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Стили для левого меню */
+        .sidebar {
+            width: 250px;
+            background-color: #2c3e50;
+            color: white;
+            transition: transform 0.3s ease;
+            overflow-y: auto;
+            height: 100vh;
+            position: sticky;
+            top: 0;
+        }
+
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background-color: #1a2530;
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(-250px);
+        }
+
+        .menu ul {
+            list-style: none;
+        }
+
+        .menu li {
+            border-bottom: 1px solid #34495e;
+        }
+
+        .menu-link {
+            display: block;
+            padding: 15px;
+            color: #ecf0f1;
+            text-decoration: none;
+            transition: background-color 0.2s ease;
+        }
+
+        .menu-link:hover,
+        .menu-link.active {
+            background-color: #34495e;
+        }
+
+        /* Стили для правой части с контентом */
+        .content-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        #content-header {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            background-color: #3498db;
+            color: white;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        #show-menu {
+            display: none;
+            margin-right: 15px;
+        }
+
+        .toggle-button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        #content-frame {
+            padding: 20px;
+            flex: 1;
+        }
+
+        .loader {
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+            color: #777;
+            display: none;
+        }
+
+        /* Адаптивный дизайн */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                z-index: 100;
+                transform: translateX(-250px);
+            }
+
+            .sidebar.expanded {
+                transform: translateX(0);
+            }
+
+            #show-menu {
+                display: block;
+            }
+        }
+
+        /* Стили для изолированного контента */
+        #content {
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            min-height: 300px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Левое меню -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h3>Навигация</h3>
+                <button id="toggle-menu" class="toggle-button">✖</button>
+            </div>
+            <nav class="menu">
+                <ul>
+                    <li><a href="#" data-page="home.html" class="menu-link active">Главная</a></li>
+                    <li><a href="#" data-page="about.html" class="menu-link">О нас</a></li>
+                    <li><a href="#" data-page="services.html" class="menu-link">Услуги</a></li>
+                    <li><a href="#" data-page="contact.html" class="menu-link">Контакты</a></li>
+                </ul>
+            </nav>
+        </div>
+
+        <!-- Правая часть с контентом -->
+        <div class="content-container">
+            <div id="content-header">
+                <button id="show-menu" class="toggle-button">☰</button>
+                <h2 id="page-title">Главная</h2>
+            </div>
+            <div id="content-frame">
+                <!-- Сюда загружается контент -->
+                <div class="loader" id="loader">Загрузка...</div>
+                <div id="content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Глобальный объект для хранения состояния приложения
+        const App = {
+            // Текущая загруженная страница
+            currentPage: 'home.html',
+
+            // Изоляция контента страниц
+            contentIsolation: {
+                // Словарь для хранения кэшированных стилей
+                pageStyles: {},
+                // Словарь для хранения кэшированных скриптов
+                pageScripts: {},
+            },
+
+            // Элементы DOM
+            elements: {
+                sidebar: document.getElementById('sidebar'),
+                content: document.getElementById('content'),
+                pageTitle: document.getElementById('page-title'),
+                loader: document.getElementById('loader'),
+                toggleMenu: document.getElementById('toggle-menu'),
+                showMenu: document.getElementById('show-menu'),
+                menuLinks: document.querySelectorAll('.menu-link')
+            },
+
+            // Инициализация приложения
+            init() {
+                this.bindEvents();
+                this.loadPage(this.currentPage);
+            },
+
+            // Привязка обработчиков событий
+            bindEvents() {
+                // Обработчик кнопки скрытия меню
+                this.elements.toggleMenu.addEventListener('click', () => {
+                    this.elements.sidebar.classList.toggle('collapsed');
+                });
+
+                // Обработчик кнопки показа меню на мобильных
+                this.elements.showMenu.addEventListener('click', () => {
+                    this.elements.sidebar.classList.toggle('expanded');
+                });
+
+                // Обработчики пунктов меню
+                this.elements.menuLinks.forEach(link => {
+                    link.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const page = link.getAttribute('data-page');
+                        const pageTitle = link.textContent;
+
+                        // Удаляем активный класс у всех ссылок
+                        this.elements.menuLinks.forEach(l => l.classList.remove('active'));
+                        // Добавляем активный класс текущей ссылке
+                        link.classList.add('active');
+
+                        // Обновляем заголовок
+                        this.elements.pageTitle.textContent = pageTitle;
+
+                        // Загружаем страницу
+                        this.loadPage(page);
+
+                        // На мобильных закрываем меню после выбора
+                        if (window.innerWidth <= 768) {
+                            this.elements.sidebar.classList.remove('expanded');
+                        }
+                    });
+                });
+            },
+
+            // Загрузка страницы
+            async loadPage(pageName) {
+                // Показываем индикатор загрузки
+                this.elements.loader.style.display = 'block';
+                this.elements.content.innerHTML = '';
+
+                try {
+                    // Загружаем HTML страницы
+                    const response = await fetch(`pages/${pageName}`);
+                    if (!response.ok) {
+                        throw new Error(`Не удалось загрузить страницу: ${response.status}`);
+                    }
+
+                    const html = await response.text();
+
+                    // Разбираем HTML
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+
+                    // Извлекаем стили, скрипты и содержимое страницы
+                    this.processPageContent(doc, pageName);
+
+                    // Обновляем текущую страницу
+                    this.currentPage = pageName;
+
+                } catch (error) {
+                    console.error('Ошибка загрузки страницы:', error);
+                    this.elements.content.innerHTML = `
+                <div class="error-message">
+                    <h3>Ошибка загрузки страницы</h3>
+                    <p>${error.message}</p>
+                </div>`;
+                } finally {
+                    // Скрываем индикатор загрузки
+                    this.elements.loader.style.display = 'none';
+                }
+            },
+
+            // Обработка содержимого загруженной страницы
+            processPageContent(doc, pageName) {
+                // Очищаем предыдущие стили и скрипты для данной страницы
+                this.cleanupPageAssets(pageName);
+
+                // Извлекаем стили
+                const styles = doc.querySelectorAll('style');
+                if (styles.length > 0) {
+                    this.processPageStyles(styles, pageName);
+                }
+
+                // Извлекаем скрипты
+                const scripts = doc.querySelectorAll('script:not([src])');
+                if (scripts.length > 0) {
+                    this.processPageScripts(scripts, pageName);
+                }
+
+                // Извлекаем внешние скрипты
+                const externalScripts = doc.querySelectorAll('script[src]');
+                if (externalScripts.length > 0) {
+                    this.processExternalScripts(externalScripts, pageName);
+                }
+
+                // Обрабатываем содержимое body
+                const bodyContent = doc.body.innerHTML;
+                this.elements.content.innerHTML = bodyContent;
+            },
+
+            // Обработка стилей страницы
+            processPageStyles(styles, pageName) {
+                // Создаем элемент стиля с уникальным ID для изоляции
+                const styleId = `style-${pageName.replace('.html', '')}`;
+                const styleElement = document.createElement('style');
+                styleElement.id = styleId;
+
+                // Добавляем все стили из документа
+                let combinedStyles = '';
+                styles.forEach(style => {
+                    combinedStyles += style.textContent;
+                });
+
+                // Задаем стили с префиксом для изоляции
+                styleElement.textContent = combinedStyles
+                    .replace(/(\.)(?!\d|\.)/g, '.page-specific .')
+                    .replace(/(#)(?!\d|\.)/g, '.page-specific #')
+                    .replace(/body/g, '.page-specific')
+                    .replace(/\/\*.*?\*\//gs, ''); // Удаляем комментарии
+
+                // Добавляем стиль в head
+                document.head.appendChild(styleElement);
+
+                // Добавляем класс для изоляции
+                this.elements.content.classList.add('page-specific');
+
+                // Сохраняем ссылку на стиль
+                this.contentIsolation.pageStyles[pageName] = styleElement;
+            },
+
+            // Обработка встроенных скриптов страницы
+            processPageScripts(scripts, pageName) {
+                // Создаем изолированную функцию для выполнения скрипта
+                const scriptId = `script-${pageName.replace('.html', '')}`;
+                const scriptElement = document.createElement('script');
+                scriptElement.id = scriptId;
+
+                // Комбинируем все скрипты в один
+                let combinedScript = `
+            // Изолированный скрипт для страницы ${pageName}
+            (function() {
+                // Контекст страницы
+                const pageElement = document.getElementById('content');
+        `;
+
+                // Добавляем содержимое всех скриптов
+                scripts.forEach(script => {
+                    combinedScript += `\n${script.textContent}\n`;
+                });
+
+                // Закрываем функцию
+                combinedScript += `
+            })();
+        `;
+
+                scriptElement.textContent = combinedScript;
+
+                // Добавляем скрипт в DOM
+                document.body.appendChild(scriptElement);
+
+                // Сохраняем ссылку на скрипт
+                this.contentIsolation.pageScripts[pageName] = scriptElement;
+            },
+
+            // Обработка внешних скриптов
+            processExternalScripts(scripts, pageName) {
+                scripts.forEach((script, index) => {
+                    const src = script.getAttribute('src');
+                    if (!src) return;
+
+                    // Проверяем, не загружен ли уже этот скрипт
+                    const existingScript = document.querySelector(`script[data-page="${pageName}"][src="${src}"]`);
+                    if (existingScript) return;
+
+                    // Создаем элемент скрипта
+                    const scriptElement = document.createElement('script');
+                    scriptElement.src = src;
+                    scriptElement.async = true;
+                    scriptElement.setAttribute('data-page', pageName);
+
+                    // Добавляем скрипт в DOM
+                    document.body.appendChild(scriptElement);
+
+                    // Сохраняем ссылку на скрипт
+                    if (!this.contentIsolation.pageScripts[pageName]) {
+                        this.contentIsolation.pageScripts[pageName] = [];
+                    }
+                    if (Array.isArray(this.contentIsolation.pageScripts[pageName])) {
+                        this.contentIsolation.pageScripts[pageName].push(scriptElement);
+                    } else {
+                        this.contentIsolation.pageScripts[pageName] = [
+                            this.contentIsolation.pageScripts[pageName],
+                            scriptElement
+                        ];
+                    }
+                });
+            },
+
+            // Очистка ресурсов страницы при переключении
+            cleanupPageAssets(newPage) {
+                // Удаляем класс изоляции
+                this.elements.content.classList.remove('page-specific');
+
+                // Очищаем стили всех страниц, кроме текущей
+                Object.entries(this.contentIsolation.pageStyles).forEach(([page, style]) => {
+                    if (page !== newPage && style && style.parentNode) {
+                        style.parentNode.removeChild(style);
+                        delete this.contentIsolation.pageStyles[page];
+                    }
+                });
+
+                // Очищаем скрипты всех страниц, кроме текущей
+                Object.entries(this.contentIsolation.pageScripts).forEach(([page, scripts]) => {
+                    if (page !== newPage) {
+                        if (Array.isArray(scripts)) {
+                            scripts.forEach(script => {
+                                if (script && script.parentNode) {
+                                    script.parentNode.removeChild(script);
+                                }
+                            });
+                        } else if (scripts && scripts.parentNode) {
+                            scripts.parentNode.removeChild(scripts);
+                        }
+                        delete this.contentIsolation.pageScripts[page];
+                    }
+                });
+            }
+        };
+
+        // Инициализация приложения после загрузки DOM
+        document.addEventListener('DOMContentLoaded', () => {
+            App.init();
+        });
+    </script>
+</body>
+
+</html>
